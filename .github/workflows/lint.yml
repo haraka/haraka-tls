@@ -1,0 +1,12 @@
+name: Lint
+
+on:
+  pull_request:
+    types: [opened, synchronized]
+
+env:
+  CI: true
+
+jobs:
+  lint:
+    uses: haraka/.github/.github/workflows/lint.yml@master
