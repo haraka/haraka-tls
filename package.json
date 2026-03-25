@@ -1,0 +1,46 @@
+{
+  "name": "haraka-tls",
+  "version": "1.0.0",
+  "description": "Haraka TLS",
+  "keywords": [
+    "haraka",
+    "tls"
+  ],
+  "homepage": "https://github.com/haraka/haraka-tls#readme",
+  "bugs": {
+    "url": "https://github.com/haraka/haraka-tls/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haraka/haraka-tls.git"
+  },
+  "license": "MIT",
+  "author": "Matt Simerson <matt@tnpi.net>",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "CHANGELOG.md",
+    "index.js",
+    "lib"
+  ],
+  "scripts": {
+    "test": "node --test test/*.js",
+    "test:coverage": "node --experimental-test-coverage --test test/*.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "prettier": "prettier --check .",
+    "prettier:fix": "prettier --write .",
+    "format": "npm run prettier:fix && npm run lint:fix"
+  },
+  "dependencies": {
+    "haraka-config": "^1.5.0"
+  },
+  "optionalDependencies": {
+    "haraka-plugin-redis": "*"
+  },
+  "prettier": {
+    "printWidth": 120,
+    "singleQuote": true,
+    "semi": false
+  }
+}
