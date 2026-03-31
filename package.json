@@ -1,6 +1,6 @@
 {
   "name": "haraka-tls",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Haraka TLS",
   "keywords": [
     "haraka",
@@ -24,19 +24,25 @@
     "lib"
   ],
   "scripts": {
-    "test": "node --test test/*.js",
-    "test:coverage": "node --experimental-test-coverage --test test/*.js",
-    "lint": "eslint .",
-    "lint:fix": "eslint --fix .",
+    "format": "npm run prettier:fix && npm run lint:fix",
+    "lint": "npx eslint *.js lib test",
+    "lint:fix": "npx eslint --fix *.js lib test",
     "prettier": "prettier --check .",
     "prettier:fix": "prettier --write .",
-    "format": "npm run prettier:fix && npm run lint:fix"
+    "test": "node --test test/*.js",
+    "test:coverage": "node --experimental-test-coverage --test test/*.js",
+    "versions": "npx npm-dep-mgr check",
+    "versions:fix": "npx npm-dep-mgr update"
   },
   "dependencies": {
     "haraka-config": "^1.5.0"
   },
+  "devDependencies": {
+    "globals": "^17.4.0",
+    "@haraka/eslint-config": "^2.0.4"
+  },
   "optionalDependencies": {
-    "haraka-plugin-redis": "*"
+    "haraka-plugin-redis": "2.0.11"
   },
   "prettier": {
     "printWidth": 120,
