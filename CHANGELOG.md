@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 #### Other
 
+- doc(CHANGELOG): add commit messages for 1.0.2
 - doc(CONTRIBUTORS): added
 - doc(CHANGELOG): add commit messages for 1.0.1
 - initial commit
@@ -26,6 +27,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Initial commit
 
-[1.0.1]: https://github.com/haraka/haraka-tls/releases/tag/v1.0.1
 [1.0.0]: https://github.com/haraka/haraka-tls/releases/tag/v1.0.0
+[1.0.1]: https://github.com/haraka/haraka-tls/releases/tag/v1.0.1
 [1.0.2]: https://github.com/haraka/haraka-tls/releases/tag/v1.0.2
