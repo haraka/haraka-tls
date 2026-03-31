@@ -6,18 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### [1.0.2] - 2026-03-31
 
-#### Changed
-
-- v1.0.1
-
-#### Other
-
-- doc(CHANGELOG): add commit messages for 1.0.2
-- doc(CONTRIBUTORS): added
-- doc(CHANGELOG): add commit messages for 1.0.1
-- initial commit
-- Initial commit
-
+- ci: update configs
 
 ### [1.0.1] - 2026-03-31
 
