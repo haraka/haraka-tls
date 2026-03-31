@@ -1,6 +1,6 @@
 {
   "name": "haraka-tls",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Haraka TLS",
   "keywords": [
     "haraka",
@@ -35,6 +35,7 @@
   "dependencies": {
     "haraka-config": "^1.5.0"
   },
+  "devDdependencies": {},
   "optionalDependencies": {
     "haraka-plugin-redis": "*"
   },
