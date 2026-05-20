@@ -18,8 +18,12 @@ Modern TLS support for [Haraka](https://haraka.github.io).
 npm install haraka-tls
 ```
 
-`haraka-plugin-redis` is an optional peer dependency, required only when the
-`[redis] disable_for_failed_hosts` feature is enabled.
+Optional dependencies (loaded lazily, only installed if you use the feature):
+
+- `haraka-plugin-redis` — required by the `[redis] disable_for_failed_hosts`
+  TLS-NO-GO cache.
+- `@haraka/ocsp` — required by `add_ocsp()` for OCSP stapling on inbound
+  TLS servers.
 
 ## Quick start
 
@@ -55,6 +59,7 @@ server.listen(25)
 // Outbound connection
 const ob = new OutboundTLS(config)
 ob.load(tls_cfg)
+await ob.init() // connects to Redis if disable_for_failed_hosts=true
 
 const mx = { exchange: 'mail.example.com' }
 const socket = connect({ host: mx.exchange, port: 25 })
@@ -180,7 +185,7 @@ const { OutboundTLS } = require('haraka-tls')
 
 const ob = new OutboundTLS(config)
 ob.load(tls_cfg) // inherit from [main], resolve file paths to Buffers
-await ob.init(cb) // connect to Redis if disable_for_failed_hosts=true
+await ob.init() // connect to Redis if disable_for_failed_hosts=true
 
 const opts = ob.get_tls_options({ exchange: 'mail.example.com' })
 // opts.servername is set to the hostname (never a bare IP)
@@ -188,6 +193,106 @@ const opts = ob.get_tls_options({ exchange: 'mail.example.com' })
 ob.check_tls_nogo(host, cb_ok, cb_nogo)
 ob.mark_tls_nogo(host, cb)
 ```
+
+For mutual TLS, attach a per-hostname certs map and call `apply_mutual_tls`
+inside the outbound STARTTLS upgrade:
+
+```js
+const certs = await load_dir(config, 'tls')
+ob.set_certs(certs)
+
+const socket = connect({
+  host: 'mx.example.com',
+  port: 25,
+  apply_mutual_tls: ob.apply_mutual_tls.bind(ob), // mixes in client cert/key per tls.ini
+})
+```
+
+### `merge_plugin_tls(cfg_module, main_cfg, plugin_cfg)` → `object`
+
+Merge a plugin's own `[tls]` section over `tls.ini` `[main]` to produce a client
+TLS options object. Resolves `key`/`cert`/`dhparam` filename refs to Buffers.
+Used by queue plugins like `smtp_forward` and `smtp_proxy`.
+
+```js
+const { load_config, merge_plugin_tls } = require('haraka-tls')
+
+const tls_cfg = load_config(config)
+const plugin_cfg = config.get('smtp_forward.ini').tls || {}
+const tls_opts = merge_plugin_tls(config, tls_cfg.main, plugin_cfg)
+// tls_opts.rejectUnauthorized inherited from [main] if absent in [tls]
+```
+
+### `ensure_dhparams(cfg_module, opts, cb)`
+
+Ensure a DH parameters file exists, generating one with `openssl dhparam` if
+missing. Worker processes wait for the master; only the master generates.
+
+```js
+const { ensure_dhparams } = require('haraka-tls')
+
+ensure_dhparams(config, { filename: 'dhparams.pem', bits: 2048 }, (err, buf) => {
+  if (err) return console.error(err)
+  // buf is the dhparam Buffer (null on worker processes)
+})
+```
+
+### `add_ocsp(server)` and `ocsp_shutdown()`
+
+Attach OCSP stapling to a `tls.Server` (or net.Server returned by
+`createServer`). Loads `@haraka/ocsp` lazily; no-op if the package isn't
+installed.
+
+```js
+const { createServer, add_ocsp, ocsp_shutdown } = require('haraka-tls')
+
+const server = createServer({ contexts, cfg: tls_cfg.main }, onConnect)
+add_ocsp(server)
+
+process.on('SIGTERM', () => {
+  ocsp_shutdown() // clears cache timers so the process can exit
+})
+```
+
+## Hot reload
+
+`watch(cfg_module, opts)` keeps a `ContextStore` (and optionally an
+`OutboundTLS` instance) in sync with on-disk changes to `tls.ini` and the
+cert directory. It uses `haraka-config`'s built-in `watchCb` mechanism — no
+extra file-watching machinery.
+
+```js
+const { ContextStore, OutboundTLS, watch } = require('haraka-tls')
+
+const config = require('haraka-config').module_config('/etc/haraka/config')
+const contexts = new ContextStore()
+const outbound = new OutboundTLS(config)
+
+const handle = await watch(config, {
+  contexts,
+  outbound, // optional — its cfg + certs reload with tls.ini changes
+  dir: 'tls', // default
+  onChange: ({ cfg, certs }) => {
+    console.log(`Reloaded TLS: ${certs.size} cert(s)`)
+  },
+})
+
+// ...later, e.g. on SIGTERM
+handle.cancel()
+```
+
+Lifecycle notes:
+
+- `haraka-config` debounces file events by ~2 seconds before firing the
+  callback, so renewals are coalesced.
+- In-flight TLS connections keep their original `SecureContext`; only new
+  handshakes see the new certs. To force existing connections to pick up
+  new certs, close them at the application layer.
+- In cluster mode, each worker watches independently. That's fine — every
+  worker has its own context cache and reads the same files.
+- `handle.cancel()` prevents future rebuilds from being applied; it does
+  not (and cannot) detach the underlying `fs.watch` handles that
+  `haraka-config` owns, but those are unref'd and will not block exit.
 
 ## Configuration
 
@@ -218,9 +323,15 @@ no_tls_hosts[]  = broken.example.net
 disable_for_failed_hosts = true
 disable_expiry  = 604800   ; seconds (default: 7 days)
 
-; [no_tls_hosts] — disable TLS for inbound connections from these hosts/CIDRs
+; [no_tls_hosts] — keyed list of hosts/networks consumed by the integrator
 192.168.1.0/24
 ```
+
+`no_tls_hosts` is exposed as a plain keyed list; this package does not perform
+CIDR matching itself. Haraka core matches entries against the remote IP via
+`net_utils.ip_in_list()`, which supports CIDR notation. If you embed
+`haraka-tls` standalone and want CIDR semantics, do the matching in your own
+code.
 
 ## Per-hostname certificates
 
@@ -237,12 +348,17 @@ config/
 ```
 
 Filenames starting with `_` have the leading underscore replaced with `*` to
-work around Windows filesystem restrictions on wildcard filenames.
+work around Windows filesystem restrictions on wildcard filenames. The rewrite
+applies only when the hostname is derived from the filename (no SAN/CN was
+extractable); SAN/CN names beginning with `_` (e.g. `_dmarc.example.com`) are
+preserved as-is.
 
 ## Integrating with Haraka's logger
 
-By default this package logs to `console`. To use Haraka's logger instead, call
-`set_logger()` before any other import:
+By default this package logs to `console`. To route logs through Haraka's
+logger instead, call `set_logger()` any time before logging begins (logging
+is deferred until a method is actually invoked, so import order does not
+matter):
 
 ```js
 const tls_logger = require('haraka-tls/lib/logger')

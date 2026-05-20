@@ -1,6 +1,6 @@
 {
   "name": "haraka-tls",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Haraka TLS",
   "keywords": [
     "haraka",
@@ -42,6 +42,7 @@
     "@haraka/eslint-config": "^2.0.4"
   },
   "optionalDependencies": {
+    "@haraka/ocsp": "^1.0.0",
     "haraka-plugin-redis": "2.0.11"
   },
   "prettier": {

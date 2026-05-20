@@ -109,6 +109,29 @@ describe('tls/socket', () => {
       assert.equal(caught.source, 'tls')
     })
 
+    it('forwards multiple errors from the same socket (S2)', () => {
+      const raw = makeSocket()
+      const ps = new PluggableStream(raw)
+      const caught = []
+      ps.on('error', (e) => caught.push(e))
+      raw.emit('error', new Error('first'))
+      raw.emit('error', new Error('second'))
+      assert.equal(caught.length, 2, 'both errors should be forwarded')
+      assert.equal(caught[0].message, 'first')
+      assert.equal(caught[1].message, 'second')
+    })
+
+    it('drops late errors when no wrapper listeners are attached', () => {
+      // Regression guard: if a wrapper consumer removed its 'error' listener
+      // before the underlying socket emits another error, the wrapper must
+      // not re-emit (which would crash the process as an unhandled emit).
+      const raw = makeSocket()
+      const ps = new PluggableStream(raw)
+      ps.on('error', () => {})
+      ps.removeAllListeners('error')
+      assert.doesNotThrow(() => raw.emit('error', new Error('late')))
+    })
+
     it('forwards secureConnect as both secureConnect and secure', () => {
       const raw = makeSocket()
       const ps = new PluggableStream(raw)
@@ -222,6 +245,45 @@ describe('tls/socket', () => {
       assert.equal(typeof socket.upgrade, 'function')
       socket.on('error', () => {})
       socket.destroy()
+    })
+
+    it('invokes apply_mutual_tls(host, tls_opts) inside upgrade()', () => {
+      const tls = require('node:tls')
+      const orig_net_connect = net.connect
+      const orig_tls_connect = tls.connect
+
+      // Stub both net.connect (avoid real DNS / TCP) and tls.connect
+      const fakeRaw = makeSocket({ remoteAddress: '127.0.0.1' })
+      fakeRaw.removeAllListeners = EventEmitter.prototype.removeAllListeners
+      net.connect = () => fakeRaw
+      tls.connect = () => {
+        const fake = new EventEmitter()
+        fake.getCipher = () => null
+        fake.getProtocol = () => 'TLSv1.3'
+        fake.getPeerCertificate = () => ({})
+        fake.setTimeout = () => {}
+        fake.setKeepAlive = () => {}
+        return fake
+      }
+
+      let observed
+      try {
+        const socket = connect({
+          host: 'mx.example.com',
+          port: 1,
+          apply_mutual_tls: (host, opts) => {
+            observed = { host, opts }
+            return { ...opts, key: Buffer.from('K'), cert: Buffer.from('C') }
+          },
+        })
+        socket.on('error', () => {})
+        socket.upgrade({ servername: 'mx.example.com' }, () => {})
+        assert.equal(observed.host, 'mx.example.com')
+        assert.equal(observed.opts.servername, 'mx.example.com')
+      } finally {
+        net.connect = orig_net_connect
+        tls.connect = orig_tls_connect
+      }
     })
   })
 })

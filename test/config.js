@@ -5,7 +5,7 @@ const assert = require('node:assert')
 const path = require('node:path')
 
 const config_module = require('haraka-config')
-const { load } = require('../lib/config')
+const { load, merge_plugin_tls } = require('../lib/config')
 
 const test_cfg = config_module.module_config(path.resolve('test'))
 const empty_cfg = config_module.module_config(path.resolve('test', 'non-exist'))
@@ -100,6 +100,61 @@ describe('tls/config', () => {
       const r2 = load(test_cfg)
       r1.main.ciphers = 'mutated'
       assert.notEqual(r2.main.ciphers, 'mutated')
+    })
+  })
+
+  describe('merge_plugin_tls()', () => {
+    it('inherits from main when plugin cfg is empty', () => {
+      const main = load(test_cfg).main
+      const merged = merge_plugin_tls(test_cfg, main, {})
+      assert.equal(merged.rejectUnauthorized, false)
+      assert.equal(merged.minVersion, 'TLSv1')
+      assert.ok(merged.ciphers)
+      assert.ok(Buffer.isBuffer(merged.key))
+      assert.ok(Buffer.isBuffer(merged.cert))
+    })
+
+    it('plugin cfg overrides main', () => {
+      const main = load(test_cfg).main
+      const merged = merge_plugin_tls(test_cfg, main, {
+        rejectUnauthorized: true,
+        minVersion: 'TLSv1.3',
+      })
+      assert.equal(merged.rejectUnauthorized, true)
+      assert.equal(merged.minVersion, 'TLSv1.3')
+    })
+
+    it('resolves key/cert filenames to Buffers', () => {
+      const merged = merge_plugin_tls(test_cfg, {}, { key: 'outbound_tls_key.pem', cert: 'outbound_tls_cert.pem' })
+      assert.ok(Buffer.isBuffer(merged.key) && merged.key.length > 0)
+      assert.ok(Buffer.isBuffer(merged.cert) && merged.cert.length > 0)
+    })
+
+    it('drops missing files rather than leaving null', () => {
+      const merged = merge_plugin_tls(test_cfg, {}, { dhparam: 'does_not_exist.pem' })
+      assert.equal(merged.dhparam, undefined)
+    })
+
+    it('normalises no_tls_hosts / force_tls_hosts to arrays', () => {
+      const a = merge_plugin_tls(test_cfg, {}, { no_tls_hosts: '10.0.0.5' })
+      assert.deepEqual(a.no_tls_hosts, ['10.0.0.5'])
+      const b = merge_plugin_tls(test_cfg, {}, {})
+      assert.deepEqual(b.no_tls_hosts, [])
+      assert.deepEqual(b.force_tls_hosts, [])
+    })
+
+    it('does not omit no_tls_hosts from inheritance ([main] is inbound-only)', () => {
+      // Even when [main] sets no_tls_hosts, merge_plugin_tls does NOT inherit it.
+      const main = { no_tls_hosts: ['1.2.3.4'] }
+      const merged = merge_plugin_tls(test_cfg, main, {})
+      assert.deepEqual(merged.no_tls_hosts, [])
+    })
+
+    it('does not mutate the input plugin cfg', () => {
+      const input = { rejectUnauthorized: true, no_tls_hosts: '10.0.0.5' }
+      const before = JSON.stringify(input)
+      merge_plugin_tls(test_cfg, {}, input)
+      assert.equal(JSON.stringify(input), before)
     })
   })
 })

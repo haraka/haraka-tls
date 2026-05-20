@@ -1,8 +1,9 @@
 'use strict'
 
-const { describe, it } = require('node:test')
+const { describe, it, before, after } = require('node:test')
 const assert = require('node:assert')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 
 const config_module = require('haraka-config')
@@ -12,6 +13,8 @@ const EC_PEM = fs.readFileSync(path.join('test', 'config', 'tls', 'ec.pem'), 'ut
 const HARAKA_LOCAL_PEM = fs.readFileSync(path.join('test', 'config', 'tls', 'haraka.local.pem'), 'utf8')
 
 const test_cfg = config_module.module_config(path.resolve('test'))
+
+const CERT_BLOCK_RE = /-----BEGIN CERTIFICATE-----/g
 
 describe('tls/certs', () => {
   describe('parse_pem()', () => {
@@ -126,6 +129,36 @@ describe('tls/certs', () => {
       for (const [, entry] of result) {
         assert.ok(entry.file, 'entry should have a file path')
       }
+    })
+  })
+
+  describe('load_dir() chain preservation (C1)', () => {
+    let tmpdir, tmp_cfg
+
+    before(() => {
+      // Fabricate a PEM with key + leaf + intermediate.
+      // The "intermediate" here is a copy of HARAKA_LOCAL_PEM's cert block;
+      // it does not need to chain validly — we only assert that load_dir
+      // retains both certificate blocks, not that they form a real chain.
+      const haraka_local_cert = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/.exec(HARAKA_LOCAL_PEM)[0]
+      const chain_pem = `${HARAKA_LOCAL_PEM.trimEnd()}\n${haraka_local_cert}\n`
+      tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'haraka-tls-test-'))
+      fs.mkdirSync(path.join(tmpdir, 'config', 'tls'), { recursive: true })
+      fs.writeFileSync(path.join(tmpdir, 'config', 'tls', 'chain.pem'), chain_pem)
+      tmp_cfg = config_module.module_config(tmpdir)
+    })
+
+    after(() => {
+      fs.rmSync(tmpdir, { recursive: true, force: true })
+    })
+
+    it('preserves the full cert chain (leaf + intermediates)', async () => {
+      const result = await load_dir(tmp_cfg, 'tls')
+      const entry = result.get('haraka.local')
+      assert.ok(entry, 'haraka.local entry should exist')
+      const cert_str = entry.cert.toString('utf8')
+      const block_count = (cert_str.match(CERT_BLOCK_RE) || []).length
+      assert.equal(block_count, 2, `expected 2 cert blocks, got ${block_count}`)
     })
   })
 })

@@ -115,4 +115,88 @@ describe('tls/outbound', () => {
       assert.doesNotThrow(() => ob.mark_tls_nogo('mail.example.com'))
     })
   })
+
+  describe('apply_mutual_tls()', () => {
+    function fixture(cfg_overrides = {}) {
+      const ob = make_outbound()
+      // Reset config to a known shape so each test is independent.
+      ob.cfg = {
+        main: { mutual_tls: false, ...cfg_overrides.main },
+        mutual_auth_hosts: cfg_overrides.mutual_auth_hosts ?? {},
+        mutual_auth_hosts_exclude: cfg_overrides.mutual_auth_hosts_exclude ?? {},
+      }
+      ob.set_certs(
+        new Map([
+          ['*', { key: Buffer.from('default-key'), cert: Buffer.from('default-cert') }],
+          ['client.example', { key: Buffer.from('client-key'), cert: Buffer.from('client-cert') }],
+          ['mx.example.com', { key: Buffer.from('mx-key'), cert: Buffer.from('mx-cert') }],
+        ]),
+      )
+      return ob
+    }
+
+    it('mixes in explicit cert from mutual_auth_hosts entry', () => {
+      const ob = fixture({ mutual_auth_hosts: { 'mx.example.com': 'client.example' } })
+      const out = ob.apply_mutual_tls('mx.example.com', { servername: 'mx.example.com' })
+      assert.deepEqual(out.key, Buffer.from('client-key'))
+      assert.deepEqual(out.cert, Buffer.from('client-cert'))
+      assert.equal(out.servername, 'mx.example.com', 'unrelated opts preserved')
+    })
+
+    it('honours mutual_auth_hosts_exclude (no cert sent)', () => {
+      const ob = fixture({
+        main: { mutual_tls: true },
+        mutual_auth_hosts_exclude: { 'mx.example.com': '' },
+      })
+      const out = ob.apply_mutual_tls('mx.example.com', { servername: 'mx.example.com' })
+      assert.equal(out.key, undefined)
+      assert.equal(out.cert, undefined)
+    })
+
+    it('falls back to host cert when [main] mutual_tls is true', () => {
+      const ob = fixture({ main: { mutual_tls: true } })
+      const out = ob.apply_mutual_tls('mx.example.com', {})
+      assert.deepEqual(out.cert, Buffer.from('mx-cert'))
+    })
+
+    it('returns tls_opts unchanged when nothing is configured', () => {
+      const ob = fixture()
+      const out = ob.apply_mutual_tls('unknown.example.com', { servername: 'x' })
+      assert.deepEqual(out, { servername: 'x' })
+    })
+
+    it('does not mutate input tls_opts', () => {
+      const ob = fixture({ main: { mutual_tls: true } })
+      const input = { servername: 'mx.example.com' }
+      const before = JSON.stringify(input)
+      ob.apply_mutual_tls('mx.example.com', input)
+      assert.equal(JSON.stringify(input), before)
+    })
+
+    it('treats no certs as a no-op even when mutual_tls=true', () => {
+      const ob = make_outbound()
+      ob.cfg = { main: { mutual_tls: true }, mutual_auth_hosts: {}, mutual_auth_hosts_exclude: {} }
+      // _certs intentionally not set
+      const out = ob.apply_mutual_tls('mx.example.com', { foo: 'bar' })
+      assert.deepEqual(out, { foo: 'bar' })
+    })
+  })
+
+  describe('init()', () => {
+    it('returns a promise that resolves when redis is disabled', async () => {
+      const ob = make_outbound()
+      ob.cfg.redis = { disable_for_failed_hosts: false }
+      await ob.init() // must resolve, not throw
+    })
+
+    it('does not load haraka-plugin-redis when redis is disabled (S1)', async () => {
+      // Bust the require cache so we can observe lazy loading.
+      const redisPath = require.resolve('haraka-plugin-redis')
+      delete require.cache[redisPath]
+      const ob = make_outbound()
+      ob.cfg.redis = { disable_for_failed_hosts: false }
+      await ob.init()
+      assert.equal(require.cache[redisPath], undefined, 'redis plugin should not be loaded')
+    })
+  })
 })
