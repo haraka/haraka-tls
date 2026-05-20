@@ -12,9 +12,10 @@ const { ContextStore } = require('../lib/context')
 const { OutboundTLS } = require('../lib/outbound')
 const { watch } = require('..')
 
-// haraka-config watchers debounce file events for ~2s before firing watchCb.
-// Tests wait a bit longer than that.
-const WATCH_TIMEOUT_MS = 8000
+// haraka-config watchers debounce file events for ~2s before firing watchCb,
+// then we read+parse+apply. On busy CI runners that chain can take >5s, so
+// give the predicate generous headroom.
+const WATCH_TIMEOUT_MS = 20000
 const POLL_MS = 50
 
 function wait_for(predicate, timeout = WATCH_TIMEOUT_MS) {
