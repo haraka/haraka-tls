@@ -15,7 +15,7 @@ const { watch } = require('..')
 // haraka-config watchers debounce file events for ~2s before firing watchCb,
 // then we read+parse+apply. On busy CI runners that chain can take >5s, so
 // give the predicate generous headroom.
-const WATCH_TIMEOUT_MS = 20000
+const WATCH_TIMEOUT_MS = 8000
 const POLL_MS = 50
 
 function wait_for(predicate, timeout = WATCH_TIMEOUT_MS) {
@@ -109,8 +109,14 @@ describe('tls/watch (hot reload)', () => {
       assert.ok(outbound.cfg, 'outbound loaded on startup')
       assert.ok(outbound._certs.has('haraka.local'), 'outbound certs map populated')
 
-      // Edit tls.ini — should trigger a reload of outbound.cfg
+      // Edit tls.ini, then touch the cert dir to trigger the reload.
+      // haraka-config's file watcher (used by `get`) is registered against
+      // the singleton config_path on Linux, so a direct tls.ini edit in a
+      // tmpdir isn't observed. The cert-dir watcher (used by `getDir`)
+      // watches the actual path passed in and fires on all platforms; its
+      // callback re-reads tls.ini, picking up our edit.
       fs.writeFileSync(path.join(cfg_root2, 'tls.ini'), '[main]\nrejectUnauthorized=true\n')
+      fs.writeFileSync(path.join(cfg_root2, 'tls', 'host.pem'), cert_b)
       await wait_for(() => outbound.cfg?.rejectUnauthorized === true)
       assert.equal(outbound.cfg.rejectUnauthorized, true, 'outbound cfg reflects tls.ini edit')
     } finally {
