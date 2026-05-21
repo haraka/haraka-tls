@@ -35,14 +35,14 @@
     "versions:fix": "npx npm-dep-mgr update"
   },
   "dependencies": {
-    "haraka-config": "^1.5.0"
+    "haraka-config": "^1.6.1"
   },
   "devDependencies": {
-    "globals": "^17.4.0",
+    "globals": "^17.6.0",
     "@haraka/eslint-config": "^2.0.4"
   },
   "optionalDependencies": {
-    "@haraka/ocsp": "^1.0.0",
+    "@haraka/ocsp": "^1.1.0",
     "haraka-plugin-redis": "2.0.11"
   },
   "prettier": {
