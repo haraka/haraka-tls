@@ -86,7 +86,7 @@ describe('tls/config', () => {
     it('outbound force_tls_hosts is an array', () => {
       const result = load(test_cfg)
       assert.ok(Array.isArray(result.outbound.force_tls_hosts))
-      assert.ok(result.outbound.force_tls_hosts.includes('first.example.com'))
+      assert.ok(result.outbound.force_tls_hosts.some((h) => h === 'first.example.com'))
     })
 
     it('outbound no_tls_hosts is an array', () => {
