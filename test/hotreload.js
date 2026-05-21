@@ -125,6 +125,50 @@ describe('tls/watch (hot reload)', () => {
     }
   })
 
+  it('survives consecutive cert changes (regression: stale watchCb)', async () => {
+    // Repro: haraka-config's read_dir unconditionally overwrites
+    // _read_args[dir] = { opts }, so a reload() that called load_dir without
+    // re-passing watchCb would leave the live fs.watch holding an undefined
+    // callback. The next file change then crashed with
+    // "TypeError: args.opts.watchCb is not a function". The original
+    // hotreload test only triggered one change cycle and missed this.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'haraka-tls-watch-multi-'))
+    const cfg_root_m = path.join(root, 'config')
+    fs.mkdirSync(path.join(cfg_root_m, 'tls'), { recursive: true })
+    fs.writeFileSync(path.join(cfg_root_m, 'tls.ini'), '[main]\n')
+    fs.writeFileSync(path.join(cfg_root_m, 'tls', 'host.pem'), cert_a)
+
+    const cfgm = config_module.module_config(root)
+    const contexts = new ContextStore()
+    const uncaught = []
+    const on_uncaught = (err) => uncaught.push(err)
+    process.on('uncaughtException', on_uncaught)
+    let calls = 0
+    const handle = await watch(cfgm, { contexts, onChange: () => calls++ })
+
+    try {
+      assert.equal(calls, 1, 'initial apply')
+
+      // First change — pre-fix this would silently poison _read_args.
+      fs.writeFileSync(path.join(cfg_root_m, 'tls', 'host.pem'), cert_b)
+      await wait_for(() => calls >= 2)
+
+      // Second change — pre-fix this throws TypeError inside the watcher's
+      // setTimeout callback, surfacing as an uncaughtException.
+      fs.writeFileSync(path.join(cfg_root_m, 'tls', 'host.pem'), cert_a)
+      await wait_for(() => calls >= 3)
+
+      // Pause past one more debounce window so any late uncaughtException
+      // from a poisoned watcher has time to surface before we assert.
+      await new Promise((r) => setTimeout(r, 2500))
+      assert.equal(uncaught.length, 0, `unexpected uncaughtException(s): ${uncaught.map((e) => e.message).join('; ')}`)
+    } finally {
+      process.off('uncaughtException', on_uncaught)
+      handle.cancel()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('cancel() stops applying changes', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'haraka-tls-watch-cancel-'))
     const cfg_root3 = path.join(root, 'config')
