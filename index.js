@@ -62,8 +62,10 @@ async function watch(cfg_module, opts) {
   const reload = async () => {
     if (cancelled) return
     try {
-      cfg = load_config(cfg_module) // no watchCb — the original watcher persists
-      certs = await load_dir(cfg_module, dir)
+      // haraka-config's read_dir overwrites stored opts on each call;
+      // re-pass watchCb so the live watcher's callback stays defined.
+      cfg = load_config(cfg_module, { watchCb: reload })
+      certs = await load_dir(cfg_module, dir, { watchCb: reload })
       apply()
       log.debug(`tls/watch: rebuilt ${certs.size} cert(s) after change`)
     } catch (err) {
@@ -78,6 +80,8 @@ async function watch(cfg_module, opts) {
   return {
     cancel() {
       cancelled = true
+      cfg_module.stop_watching('tls.ini')
+      cfg_module.stop_watching(dir)
     },
   }
 }

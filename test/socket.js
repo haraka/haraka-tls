@@ -187,7 +187,7 @@ describe('tls/socket', () => {
 
     it('setKeepAlive() stores the value', () => {
       const raw = makeSocket()
-      raw.setKeepAlive = (b) => {}
+      raw.setKeepAlive = () => {}
       const ps = new PluggableStream(raw)
       ps.setKeepAlive(true)
       assert.equal(ps._keepalive, true)

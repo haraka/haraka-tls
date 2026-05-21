@@ -56,7 +56,10 @@ describe('tls/certs', () => {
 
     it('extracts CN from subject — ec.pem → mail.haraka.io', () => {
       const result = parse_pem(EC_PEM)
-      assert.ok(result.names?.includes('mail.haraka.io'), `names=${result.names}`)
+      assert.ok(
+        result.names?.some((n) => n === 'mail.haraka.io'),
+        `names=${result.names}`,
+      )
     })
 
     it('extracts CN from subject — haraka.local.pem → haraka.local', () => {
